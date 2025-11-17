@@ -874,5 +874,24 @@ export const books: Book[] = [
     reviewCount: 16,
     inStock: true,
     featured: true,
+  },
+  {
+    id: '46',
+    title: 'Biochemical Engineering and Biotechnology',
+    author: 'Aya',
+    description: 'A modern textbook covering biochemical engineering principles, bioprocess technology, and applications in biotechnology and medicine.',
+    price: 119.99,
+    image: '/images/book7.jpg',
+    isbn: '978-9876543210',
+    genre: ['Engineering', 'Biotechnology'],
+    tags: ['Biochemical Engineering', 'Bioprocess', 'Biotechnology'],
+    datePublished: '2025-09-04',
+    pages: 512,
+    language: 'English',
+    publisher: 'Amana Academic Press',
+    rating: 4.7,
+    reviewCount: 8,
+    inStock: true,
+    featured: true
   }
 ];

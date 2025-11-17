@@ -132,7 +132,7 @@ const BookCard: React.FC<BookCardProps> = ({ book, onAddToCart, isAdded = false,
                 ? 'bg-green-600 text-white cursor-not-allowed'
                 : isAdding
                 ? 'bg-blue-400 text-white cursor-wait'
-                : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
+                : 'bg-red-600 text-white hover:bg-red-700 cursor-pointer'
             }`}
           >
             {isAdded || showSuccess ? (
