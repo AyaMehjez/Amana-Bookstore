@@ -1,50 +1,39 @@
 // src/app/api/books/route.ts
 import { NextResponse } from 'next/server';
-import { books } from '../../data/books';
+import { getDatabase, closeConnection } from '@/lib/mongodb';
 
-// GET /api/books - Return all books
+/**
+ * GET /api/books
+ * Retrieves all documents from the "books" collection
+ */
 export async function GET() {
+  let client;
   try {
-    return NextResponse.json(books);
-  } catch (err) {
-    console.error('Error fetching books:', err);
+    // Establish connection to the database
+    const db = await getDatabase();
+    
+    // Query the books collection
+    const books = await db.collection('books').find({}).toArray();
+    
+    // Return results as JSON with proper headers
     return NextResponse.json(
-      { error: 'Failed to fetch books' },
+      books,
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=30',
+        },
+      }
+    );
+  } catch (error) {
+    console.error('Error fetching books from MongoDB:', error);
+    return NextResponse.json(
+      { 
+        error: 'Failed to fetch books',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
 }
-
-// Future implementation notes:
-// - Connect to a database (e.g., PostgreSQL, MongoDB)
-// - Add authentication middleware for admin operations
-// - Implement pagination for large datasets
-// - Add filtering and search query parameters
-// - Include proper error handling and logging
-// - Add rate limiting for API protection
-// - Implement caching strategies for better performance
-
-// Example future database integration:
-// import { db } from '@/lib/database';
-// 
-// export async function GET(request: Request) {
-//   const { searchParams } = new URL(request.url);
-//   const page = parseInt(searchParams.get('page') || '1');
-//   const limit = parseInt(searchParams.get('limit') || '10');
-//   const genre = searchParams.get('genre');
-//   
-//   try {
-//     const books = await db.books.findMany({
-//       where: genre ? { genre: { contains: genre } } : {},
-//       skip: (page - 1) * limit,
-//       take: limit,
-//     });
-//     
-//     return NextResponse.json(books);
-//   } catch (error) {
-//     return NextResponse.json(
-//       { error: 'Database connection failed' },
-//       { status: 500 }
-//     );
-//   }
-// }

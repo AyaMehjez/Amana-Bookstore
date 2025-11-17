@@ -8,10 +8,11 @@ import { Book } from '../types';
 interface BookCardProps {
   book: Book;
   onAddToCart?: (bookId: string) => void;
+  isAdded?: boolean;
+  isAdding?: boolean;
 }
 
-const BookCard: React.FC<BookCardProps> = ({ book, onAddToCart }) => {
-  const [isAddingToCart, setIsAddingToCart] = useState(false);
+const BookCard: React.FC<BookCardProps> = ({ book, onAddToCart, isAdded = false, isAdding = false }) => {
   const [showSuccess, setShowSuccess] = useState(false);
 
   // Function to render star ratings
@@ -59,25 +60,17 @@ const BookCard: React.FC<BookCardProps> = ({ book, onAddToCart }) => {
     e.preventDefault(); // Prevent navigation when clicking the button
     e.stopPropagation();
     
-    if (!book.inStock || isAddingToCart) return;
-    
-    setIsAddingToCart(true);
+    if (!book.inStock || isAdding || isAdded) return;
     
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
       if (onAddToCart) {
-        onAddToCart(book.id);
+        await onAddToCart(book.id);
+        // Show success feedback
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 2000);
       }
-      
-      // Show success feedback
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 2000);
     } catch (error) {
       console.error('Error adding to cart:', error);
-    } finally {
-      setIsAddingToCart(false);
     }
   };
 
@@ -131,25 +124,25 @@ const BookCard: React.FC<BookCardProps> = ({ book, onAddToCart }) => {
           
           <button
             onClick={handleAddToCart}
-            disabled={!book.inStock || isAddingToCart}
+            disabled={!book.inStock || isAdding || isAdded}
             className={`flex-1 px-3 py-2 text-sm rounded-md transition-colors duration-200 ${
               !book.inStock
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : showSuccess
-                ? 'bg-green-600 text-white cursor-pointer'
-                : isAddingToCart
+                : isAdded || showSuccess
+                ? 'bg-green-600 text-white cursor-not-allowed'
+                : isAdding
                 ? 'bg-blue-400 text-white cursor-wait'
                 : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
             }`}
           >
-            {showSuccess ? (
+            {isAdded || showSuccess ? (
               <span className="flex items-center justify-center gap-1">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                Added!
+                Added to Cart
               </span>
-            ) : isAddingToCart ? (
+            ) : isAdding ? (
               <span className="flex items-center justify-center gap-1">
                 <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

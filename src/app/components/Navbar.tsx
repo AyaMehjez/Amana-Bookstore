@@ -12,20 +12,21 @@ const Navbar: React.FC = () => {
   const pathname = usePathname();
 
   useEffect(() => {
-    // This function updates the cart count from localStorage.
-    // It's designed to run on the client side only.
-    const updateCartCount = () => {
-      const storedCart = localStorage.getItem('cart');
-      if (storedCart) {
-        try {
-          const cart: CartItem[] = JSON.parse(storedCart);
-          const count = cart.reduce((total, item) => total + item.quantity, 0);
+    // This function updates the cart count from MongoDB via API.
+    // It calculates the total quantity of all books in the cart.
+    const updateCartCount = async () => {
+      try {
+        const response = await fetch('/api/cart');
+        if (response.ok) {
+          const cartItems = await response.json();
+          // Calculate total quantity: sum of all quantities
+          const count = cartItems.reduce((total: number, item: { quantity: number }) => total + item.quantity, 0);
           setCartItemCount(count);
-        } catch (error) {
-          console.error('Failed to parse cart from localStorage', error);
+        } else {
           setCartItemCount(0);
         }
-      } else {
+      } catch (error) {
+        console.error('Failed to fetch cart count from API', error);
         setCartItemCount(0);
       }
     };

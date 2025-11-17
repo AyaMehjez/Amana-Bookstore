@@ -8,16 +8,64 @@ import { books } from '../../data/books';
 import { reviews } from '../../data/reviews';
 import { Book, CartItem, Review } from '../../types';
 
+interface CartItemFromAPI {
+  _id?: string;
+  userId: string;
+  bookId: string;
+  quantity: number;
+  addedAt?: string;
+}
+
 export default function BookDetailPage() {
   const [book, setBook] = useState<Book | null>(null);
   const [bookReviews, setBookReviews] = useState<Review[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAddedToCart, setIsAddedToCart] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [cartQuantity, setCartQuantity] = useState(0);
 
   const params = useParams();
   const router = useRouter();
   const { id } = params;
+
+  // Check if book is in cart and get its quantity
+  useEffect(() => {
+    const checkCartStatus = async () => {
+      if (!id) return;
+      
+      try {
+        const response = await fetch('/api/cart');
+        if (response.ok) {
+          const cartItems: CartItemFromAPI[] = await response.json();
+          const cartItem = cartItems.find(item => item.bookId === id);
+          
+          if (cartItem) {
+            setIsAddedToCart(true);
+            setCartQuantity(cartItem.quantity);
+          } else {
+            setIsAddedToCart(false);
+            setCartQuantity(0);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking cart status:', error);
+      }
+    };
+
+    checkCartStatus();
+
+    // Listen for cart updates
+    const handleCartUpdate = () => {
+      checkCartStatus();
+    };
+
+    window.addEventListener('cartUpdated', handleCartUpdate);
+    return () => {
+      window.removeEventListener('cartUpdated', handleCartUpdate);
+    };
+  }, [id]);
 
   useEffect(() => {
     if (id) {
@@ -34,39 +82,69 @@ export default function BookDetailPage() {
     }
   }, [id]);
 
-  const handleAddToCart = () => {
-    if (!book) return;
+  const handleAddToCart = async () => {
+    if (!book || isAdding || isAddedToCart) return;
 
-    const cartItem: CartItem = {
-      id: `${book.id}-${Date.now()}`,
-      bookId: book.id,
-      quantity: quantity,
-      addedAt: new Date().toISOString(),
-    };
+    setIsAdding(true);
 
-    // Retrieve existing cart from localStorage
-    const storedCart = localStorage.getItem('cart');
-    const cart: CartItem[] = storedCart ? JSON.parse(storedCart) : [];
+    try {
+      // Check if book already exists in cart
+      const response = await fetch('/api/cart');
+      if (response.ok) {
+        const cartItems: CartItemFromAPI[] = await response.json();
+        const existingItem = cartItems.find(item => item.bookId === book.id);
 
-    // Check if the book is already in the cart
-    const existingItemIndex = cart.findIndex((item) => item.bookId === book.id);
+        if (existingItem && existingItem._id) {
+          // Update existing item quantity
+          const updateResponse = await fetch('/api/cart', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              id: existingItem._id,
+              quantity: existingItem.quantity + quantity,
+            }),
+          });
 
-    if (existingItemIndex > -1) {
-      // Update quantity if item already exists
-      cart[existingItemIndex].quantity += quantity;
-    } else {
-      // Add new item to cart
-      cart.push(cartItem);
+          if (!updateResponse.ok) {
+            throw new Error('Failed to update cart');
+          }
+        } else {
+          // Add new item to cart
+          const addResponse = await fetch('/api/cart', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userId: 'guest-user',
+              bookId: book.id,
+              quantity: quantity,
+            }),
+          });
+
+          if (!addResponse.ok) {
+            throw new Error('Failed to add to cart');
+          }
+        }
+
+        // Update local state
+        setIsAddedToCart(true);
+        setCartQuantity(prev => prev + quantity);
+        
+        // Notify navbar and other components
+        window.dispatchEvent(new CustomEvent('cartUpdated'));
+
+        // Optional: Redirect to cart page
+        // router.push('/cart');
+      }
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      alert('Failed to add item to cart. Please try again.');
+    } finally {
+      setIsAdding(false);
     }
-
-    // Save updated cart to localStorage
-    localStorage.setItem('cart', JSON.stringify(cart));
-
-    // Dispatch a custom event to notify the Navbar
-    window.dispatchEvent(new CustomEvent('cartUpdated'));
-
-    // Redirect to the cart page after adding
-    router.push('/cart');
   };
   
   const renderStars = (rating: number) => {
@@ -181,9 +259,37 @@ export default function BookDetailPage() {
 
           <button 
             onClick={handleAddToCart}
-            className="w-full bg-blue-500 text-white py-3 rounded-md hover:bg-blue-600 transition-colors duration-300 text-lg font-semibold cursor-pointer"
+            disabled={!book.inStock || isAdding || isAddedToCart}
+            className={`w-full py-3 rounded-md transition-colors duration-300 text-lg font-semibold ${
+              !book.inStock
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : isAddedToCart
+                ? 'bg-green-600 text-white cursor-not-allowed'
+                : isAdding
+                ? 'bg-blue-400 text-white cursor-wait'
+                : 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer'
+            }`}
           >
-            Add to Cart
+            {isAddedToCart ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Added to Cart {cartQuantity > 0 && `(${cartQuantity})`}
+              </span>
+            ) : isAdding ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Adding...
+              </span>
+            ) : !book.inStock ? (
+              'Out of Stock'
+            ) : (
+              'Add to Cart'
+            )}
           </button>
 
           <Link href="/" className="text-blue-500 hover:underline mt-6 text-center cursor-pointer">

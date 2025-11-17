@@ -5,84 +5,184 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import CartItem from '../components/CartItem';
 import { books } from '../data/books';
-import { Book, CartItem as CartItemType } from '../types';
+import { Book } from '../types';
+
+interface CartItemFromAPI {
+  _id?: string;
+  userId: string;
+  bookId: string;
+  quantity: number;
+  addedAt?: string;
+}
 
 export default function CartPage() {
   const [cartItems, setCartItems] = useState<{ book: Book; quantity: number }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch cart items from API
+  const fetchCartItems = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const response = await fetch('/api/cart');
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch cart items');
+      }
+      
+      const data: CartItemFromAPI[] = await response.json();
+      
+      // Map cart items from API to include book details
+      const itemsWithBooks = data
+        .map(item => {
+          const book = books.find(b => b.id === item.bookId);
+          return book ? { book, quantity: item.quantity } : null;
+        })
+        .filter((item): item is { book: Book; quantity: number } => item !== null);
+      
+      setCartItems(itemsWithBooks);
+    } catch (err) {
+      console.error('Error fetching cart items:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load cart items');
+      setCartItems([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Load cart from localStorage
-    const storedCart = localStorage.getItem('cart');
-    if (storedCart) {
-      try {
-        const cart: CartItemType[] = JSON.parse(storedCart);
-        const itemsWithBooks = cart
-          .map(item => {
-            const book = books.find(b => b.id === item.bookId);
-            return book ? { book, quantity: item.quantity } : null;
-          })
-          .filter((item): item is { book: Book; quantity: number } => item !== null);
-        
-        setCartItems(itemsWithBooks);
-      } catch (error) {
-        console.error('Failed to parse cart from localStorage', error);
-        setCartItems([]);
-      }
-    }
-    setIsLoading(false);
+    fetchCartItems();
   }, []);
 
-  const updateQuantity = (bookId: string, newQuantity: number) => {
+  const updateQuantity = async (bookId: string, newQuantity: number) => {
     if (newQuantity < 1) return;
 
-    // Update local state
+    // Optimistic update: Update local state first
     const updatedItems = cartItems.map(item => 
       item.book.id === bookId ? { ...item, quantity: newQuantity } : item
     );
     setCartItems(updatedItems);
 
-    // Update localStorage
-    const cartForStorage = updatedItems.map(item => ({
-      id: `${item.book.id}-${Date.now()}`,
-      bookId: item.book.id,
-      quantity: item.quantity,
-      addedAt: new Date().toISOString()
-    }));
-    localStorage.setItem('cart', JSON.stringify(cartForStorage));
-    
-    // Notify navbar
-    window.dispatchEvent(new CustomEvent('cartUpdated'));
+    try {
+      // Find the cart item ID from MongoDB
+      const response = await fetch('/api/cart');
+      if (response.ok) {
+        const allCartItems: CartItemFromAPI[] = await response.json();
+        const cartItem = allCartItems.find(item => item.bookId === bookId);
+        
+        if (cartItem && cartItem._id) {
+          // Update in MongoDB using PUT
+          const updateResponse = await fetch('/api/cart', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              id: cartItem._id,
+              quantity: newQuantity,
+            }),
+          });
+
+          if (!updateResponse.ok) {
+            throw new Error('Failed to update quantity');
+          }
+        }
+      }
+      
+      // Notify navbar
+      window.dispatchEvent(new CustomEvent('cartUpdated'));
+    } catch (error) {
+      console.error('Error updating quantity:', error);
+      // Revert optimistic update on error
+      fetchCartItems();
+    }
   };
 
-  const removeItem = (bookId: string) => {
-    // Update local state
+  const removeItem = async (bookId: string) => {
+    // Optimistic update: Remove from local state first
     const updatedItems = cartItems.filter(item => item.book.id !== bookId);
     setCartItems(updatedItems);
 
-    // Update localStorage
-    const cartForStorage = updatedItems.map(item => ({
-      id: `${item.book.id}-${Date.now()}`,
-      bookId: item.book.id,
-      quantity: item.quantity,
-      addedAt: new Date().toISOString()
-    }));
-    localStorage.setItem('cart', JSON.stringify(cartForStorage));
-    
-    // Notify navbar
-    window.dispatchEvent(new CustomEvent('cartUpdated'));
+    try {
+      // Find the cart item ID from MongoDB
+      const response = await fetch('/api/cart');
+      if (response.ok) {
+        const allCartItems: CartItemFromAPI[] = await response.json();
+        const cartItem = allCartItems.find(item => item.bookId === bookId);
+        
+        if (cartItem && cartItem._id) {
+          // Delete from MongoDB
+          const deleteResponse = await fetch(`/api/cart?itemId=${cartItem._id}`, {
+            method: 'DELETE',
+          });
+
+          if (!deleteResponse.ok) {
+            throw new Error('Failed to remove item');
+          }
+        }
+      }
+      
+      // Notify navbar
+      window.dispatchEvent(new CustomEvent('cartUpdated'));
+    } catch (error) {
+      console.error('Error removing item:', error);
+      // Revert optimistic update on error
+      fetchCartItems();
+    }
   };
 
-  const clearCart = () => {
-    setCartItems([]);
-    localStorage.removeItem('cart');
-    window.dispatchEvent(new CustomEvent('cartUpdated'));
+  const clearCart = async () => {
+    try {
+      // Get all cart items and delete them one by one
+      const response = await fetch('/api/cart');
+      if (response.ok) {
+        const allCartItems: CartItemFromAPI[] = await response.json();
+        
+        // Delete all items
+        await Promise.all(
+          allCartItems.map(item => 
+            item._id ? fetch(`/api/cart?itemId=${item._id}`, { method: 'DELETE' }) : Promise.resolve()
+          )
+        );
+      }
+      
+      setCartItems([]);
+      window.dispatchEvent(new CustomEvent('cartUpdated'));
+    } catch (error) {
+      console.error('Error clearing cart:', error);
+    }
   };
 
   const totalPrice = cartItems.reduce((total, item) => total + (item.book.price * item.quantity), 0);
 
   if (isLoading) {
-    return <div className="text-center py-10">Loading...</div>;
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-3xl font-bold text-gray-800 mb-8">Shopping Cart</h1>
+        <div className="text-center py-10">
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-3xl font-bold text-gray-800 mb-8">Shopping Cart</h1>
+        <div className="text-center py-12 bg-white rounded-lg shadow-md">
+          <p className="text-red-600 mb-4">Error: {error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-blue-500 text-white px-6 py-3 rounded-md hover:bg-blue-600 transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
